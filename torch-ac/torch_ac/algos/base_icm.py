@@ -169,10 +169,10 @@ class BaseICMAlgo(ABC):
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(next_obs, action, reward, done)
+                    for obs_, action_, reward_, done_ in zip(obs, action, reward + fwd_loss, done)
                 ], device=self.device)
             else:
-                self.rewards[i] = torch.tensor(reward, device=self.device)
+                self.rewards[i] = torch.tensor(reward, device=self.device) + fwd_loss
             self.log_probs[i] = dist.log_prob(action)
 
             # Update log values
