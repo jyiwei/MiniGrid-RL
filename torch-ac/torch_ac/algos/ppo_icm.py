@@ -81,7 +81,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
                     # curiosity loss
 
-                    curiosity_loss = self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss
+                    curiosity_loss = (self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss).mean()
                     total_loss = self.icm_policy_weight * loss + curiosity_loss
                     
                     # Update batch values
@@ -112,9 +112,9 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 batch_loss.backward()
                 grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
+                # grad_norm_icm = sum(p.grad.data.norm(2).item() ** 2 for p in self.icm.parameters()) ** 0.5
+                # torch.nn.utils.clip_grad_norm_(self.icm.parameters(), self.max_grad_norm)
                 self.optimizer.step()
-                grad_norm_icm = sum(p.grad.data.norm(2).item() ** 2 for p in self.icm.parameters()) ** 0.5
-                torch.nn.utils.clip_grad_norm_(self.icm.parameters(), self.max_grad_norm)
 
                 # Update log values
 

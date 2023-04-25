@@ -61,7 +61,7 @@ class BaseAlgo(ABC):
         self.reshape_reward = reshape_reward
 
         # Control parameters
-
+        # print("self recurrence", self.acmodel.recurrent)
         assert self.acmodel.recurrent or self.recurrence == 1
         assert self.num_frames_per_proc % self.recurrence == 0
 

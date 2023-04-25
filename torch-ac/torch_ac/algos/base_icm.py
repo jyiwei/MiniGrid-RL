@@ -59,12 +59,12 @@ class BaseICMAlgo(ABC):
         self.value_loss_coef = value_loss_coef
         self.max_grad_norm = max_grad_norm
         self.icm_beta = icm_beta
+        self.icm_policy_weight = icm_policy_weight
         self.recurrence = recurrence
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
         self.reshape_reward = reshape_reward
 
         # Control parameters
-
         assert self.acmodel.recurrent or self.recurrence == 1
         assert self.num_frames_per_proc % self.recurrence == 0
 
@@ -146,9 +146,10 @@ class BaseICMAlgo(ABC):
             obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
+            one_hot_action = F.one_hot(action, num_classes=7).float()
             # Calculate inverse and forward loss
-            action_logits, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), action)
-            inv_loss = F.cross_entropy(action_logits, action)
+            action_logits, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), one_hot_action)
+            inv_loss = F.cross_entropy(action_logits, one_hot_action)
             fwd_loss = F.mse_loss(pred_phi, phi) / 2
 
             self.inv_losses[i] = inv_loss
