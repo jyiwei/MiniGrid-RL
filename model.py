@@ -106,3 +106,59 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
     def _get_embed_text(self, text):
         _, hidden = self.text_rnn(self.word_embedding(text))
         return hidden[-1]
+
+class ICM(nn.Module):
+    def __init__(self, obs_space, action_space):
+        super(ICM, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(3, 16, (2, 2)),
+            nn.ReLU(),
+            nn.MaxPool2d((2, 2)),
+            nn.Conv2d(16, 32, (2, 2)),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, (2, 2)),
+            nn.ReLU()
+        )
+        n = obs_space["image"][0]
+        m = obs_space["image"][1]
+        
+        image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
+
+        self.inverse_net = nn.Sequential(
+            nn.Linear(image_embedding_size, 64),
+            nn.LeakyReLU(),
+            nn.Linear(64, action_space.n)
+        )
+        self.forward_net = nn.Sequential(
+            nn.Linear(image_embedding_size + action_space.n, 64),
+            nn.LeakyReLU(),
+            nn.Linear(64, self.feature_size)
+        )
+        self.apply(init_params)
+
+    # def _initialize_weights(self):
+    #     for module in self.modules():
+    #         if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
+    #             nn.init.xavier_uniform_(module.weight)
+    #             # nn.init.kaiming_uniform_(module.weight)
+    #             nn.init.constant_(module.bias, 0)
+
+    def forward(self, obs, next_obs, action):
+
+        phi_t = obs.image.transpose(1, 3).transpose(2, 3)
+        phi_t = self.image_conv(phi_t)
+        phi_t = phi_t.reshape(phi_t.shape[0], -1)
+
+        phi_t_next = next_obs.image.transpose(1, 3).transpose(2, 3)
+        phi_t_next = self.image_conv(phi_t_next)
+        phi_t_next = phi_t_next.reshape(phi_t_next.shape[0], -1)
+
+        return self.inverse_net(torch.cat((phi_t, phi_t_next), 1)), self.forward_net(
+               torch.cat((phi_t, action), 1)), phi_t_next
+
+        # state_ft = self.conv(state)
+        # next_state_ft = self.conv(next_state)
+        # state_ft = state_ft.view(-1, self.feature_size)
+        # next_state_ft = next_state_ft.view(-1, self.feature_size)
+        # return self.inverse_net(torch.cat((state_ft, next_state_ft), 1)), self.forward_net(
+        #     torch.cat((state_ft, action), 1)), next_state_ft

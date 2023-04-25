@@ -8,6 +8,7 @@ import sys
 import utils
 from utils import device
 from model import ACModel
+from model import ICM
 
 
 # Parse arguments
@@ -61,6 +62,8 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model to handle text input")
+# parser.add_argument("--use_icm", default=False,
+#                     help="add a ICM module to the model to use intrinsic curiosity")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -119,11 +122,20 @@ if __name__ == "__main__":
     # Load model
 
     acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
-    if "model_state" in status:
-        acmodel.load_state_dict(status["model_state"])
+    icm = ICM(obs_space, envs[0].action_space)
+
+    if "ac_model_state" in status:
+        acmodel.load_state_dict(status["ac_model_state"])
+
+    if "icm_model_state" in status:
+        icm.load_state_dict(status["icm_model_state"])
+
+
     acmodel.to(device)
+    icm.to(device)
     txt_logger.info("Model loaded\n")
     txt_logger.info("{}\n".format(acmodel))
+    txt_logger.info("{}\n".format(icm))
 
     # Load algo
 
@@ -133,6 +145,10 @@ if __name__ == "__main__":
                                 args.optim_alpha, args.optim_eps, preprocess_obss)
     elif args.algo == "ppo":
         algo = torch_ac.PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
+                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+    elif args.algo == "ppo-icm":
+        algo = torch_ac.PPO_ICM_Algo(envs, acmodel, icm, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                 args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                                 args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
     else:
@@ -196,7 +212,7 @@ if __name__ == "__main__":
 
         if args.save_interval > 0 and update % args.save_interval == 0:
             status = {"num_frames": num_frames, "update": update,
-                      "model_state": acmodel.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
+                      "ac_model_state": acmodel.state_dict(), "icm_model_state": icm.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
             if hasattr(preprocess_obss, "vocab"):
                 status["vocab"] = preprocess_obss.vocab.vocab
             utils.save_status(status, model_dir)
