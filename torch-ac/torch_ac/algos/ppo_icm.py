@@ -83,6 +83,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
                     curiosity_loss = (self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss).mean()
                     total_loss = self.icm_policy_weight * loss + curiosity_loss
+                    # total_loss = curiosity_loss
                     
                     # Update batch values
 
@@ -90,7 +91,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     batch_value += value.mean().item()
                     batch_policy_loss += policy_loss.item()
                     batch_value_loss += value_loss.item()
-                    batch_curiosity_loss += curiosity_loss.item()
+                    # batch_curiosity_loss += curiosity_loss.item()
                     batch_loss += total_loss
 
                     # Update memories for next epoch
