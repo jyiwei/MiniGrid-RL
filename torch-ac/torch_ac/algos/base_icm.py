@@ -152,8 +152,8 @@ class BaseICMAlgo(ABC):
             inv_loss = F.cross_entropy(action_logits, one_hot_action)
             fwd_loss = F.mse_loss(pred_phi, phi) / 2
 
-            self.inv_losses[i] = inv_loss
-            self.fwd_losses[i] = fwd_loss
+            self.inv_losses[i] = inv_loss.detach()
+            self.fwd_losses[i] = fwd_loss.detach()
 
             # Update experiences values
 
@@ -169,10 +169,10 @@ class BaseICMAlgo(ABC):
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs, action, reward + fwd_loss, done)
+                    for obs_, action_, reward_, done_ in zip(obs, action, reward + fwd_loss.detach(), done)
                 ], device=self.device)
             else:
-                self.rewards[i] = torch.tensor(reward, device=self.device) + fwd_loss
+                self.rewards[i] = torch.tensor(reward, device=self.device) +  fwd_loss.detach()
             self.log_probs[i] = dist.log_prob(action)
 
             # Update log values
