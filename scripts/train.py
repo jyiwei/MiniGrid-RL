@@ -52,6 +52,10 @@ parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
 parser.add_argument("--max-grad-norm", type=float, default=0.5,
                     help="maximum norm of gradient (default: 0.5)")
+parser.add_argument("--icm-beta", type=float, default=0.5,
+                    help="the beta of icm")
+parser.add_argument("--icm_policy_weight", type=float, default=1,
+                    help="the weight on the policy loss")
 parser.add_argument("--optim-eps", type=float, default=1e-8,
                     help="Adam and RMSprop optimizer epsilon (default: 1e-8)")
 parser.add_argument("--optim-alpha", type=float, default=0.99,
@@ -147,10 +151,10 @@ if __name__ == "__main__":
         algo = torch_ac.PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                 args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                                 args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
-    elif args.algo == "ppo-icm":
-        algo = torch_ac.PPO_ICM_Algo(envs, acmodel, icm, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
-                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+    elif args.algo == "ppo_icm":
+        algo = torch_ac.PPO_ICM_Algo(envs, acmodel, icm, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence, args.optim_eps, 
+                                args.clip_eps, args.icm_beta, args.icm_policy_weight,  args.epochs, args.batch_size, preprocess_obss)
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 

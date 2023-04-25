@@ -119,20 +119,21 @@ class ICM(nn.Module):
             nn.Conv2d(32, 64, (2, 2)),
             nn.ReLU()
         )
+        self.action_net = nn.Linear(action_space.n, 64)
         n = obs_space["image"][0]
         m = obs_space["image"][1]
         
         image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
 
         self.inverse_net = nn.Sequential(
-            nn.Linear(image_embedding_size, 64),
+            nn.Linear(image_embedding_size * 2, 64),
             nn.LeakyReLU(),
             nn.Linear(64, action_space.n)
         )
         self.forward_net = nn.Sequential(
-            nn.Linear(image_embedding_size + action_space.n, 64),
+            nn.Linear(image_embedding_size * 2, 64),
             nn.LeakyReLU(),
-            nn.Linear(64, self.feature_size)
+            nn.Linear(64, image_embedding_size)
         )
         self.apply(init_params)
 
@@ -146,15 +147,20 @@ class ICM(nn.Module):
     def forward(self, obs, next_obs, action):
 
         phi_t = obs.image.transpose(1, 3).transpose(2, 3)
-        phi_t = self.image_conv(phi_t)
+        phi_t = self.conv(phi_t)
         phi_t = phi_t.reshape(phi_t.shape[0], -1)
-
+        
         phi_t_next = next_obs.image.transpose(1, 3).transpose(2, 3)
-        phi_t_next = self.image_conv(phi_t_next)
+        phi_t_next = self.conv(phi_t_next)
         phi_t_next = phi_t_next.reshape(phi_t_next.shape[0], -1)
 
-        return self.inverse_net(torch.cat((phi_t, phi_t_next), 1)), self.forward_net(
-               torch.cat((phi_t, action), 1)), phi_t_next
+        action_features = self.action_net(action)
+
+        action_logits = self.inverse_net(torch.cat((phi_t, phi_t_next), 1))
+
+        phi_t_next_hat = self.forward_net(torch.cat((phi_t, action_features), 1))
+
+        return action_logits, phi_t_next_hat, phi_t_next
 
         # state_ft = self.conv(state)
         # next_state_ft = self.conv(next_state)
