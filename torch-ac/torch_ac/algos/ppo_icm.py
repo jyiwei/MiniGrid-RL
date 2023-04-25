@@ -24,6 +24,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
         assert self.batch_size % self.recurrence == 0
 
         self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
+        self.icm_optimizer = torch.optim.Adam(self.icm.parameters(), lr, eps=adam_eps)
         self.batch_num = 0
 
     def update_parameters(self, exps):
@@ -81,7 +82,9 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
                     # curiosity loss
 
-                    curiosity_loss = (self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss).mean()
+                    curiosity_loss = (self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss)
+                    curiosity_loss = curiosity_loss.mean()
+                    
                     total_loss = self.icm_policy_weight * loss + curiosity_loss
                     # total_loss = curiosity_loss
                     
@@ -91,7 +94,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     batch_value += value.mean().item()
                     batch_policy_loss += policy_loss.item()
                     batch_value_loss += value_loss.item()
-                    # batch_curiosity_loss += curiosity_loss.item()
+                    batch_curiosity_loss += curiosity_loss.item()
                     batch_loss += total_loss
 
                     # Update memories for next epoch
@@ -108,14 +111,15 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 batch_loss /= self.recurrence
 
                 # Update actor-critic
-
+                torch.autograd.set_detect_anomaly(True)
                 self.optimizer.zero_grad()
-                batch_loss.backward()
+                self.icm_optimizer.zero_grad()
+                batch_loss.backward(retain_graph = True)
                 grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
-                # grad_norm_icm = sum(p.grad.data.norm(2).item() ** 2 for p in self.icm.parameters()) ** 0.5
-                # torch.nn.utils.clip_grad_norm_(self.icm.parameters(), self.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.icm.parameters(), self.max_grad_norm)
                 self.optimizer.step()
+                self.icm_optimizer.step()
 
                 # Update log values
 
