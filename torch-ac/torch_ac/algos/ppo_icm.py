@@ -61,7 +61,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     # Compute loss
 
                     # curiosity loss
-                    one_hot_action = F.one_hot(sb.action.to(torch.int64), num_classes=7).float()
+                    one_hot_action = F.one_hot(sb.action.to(torch.int64), num_classes=3).float()
                     # Calculate inverse and forward loss
                     action_logits, pred_phi, phi = self.icm(sb.obs, sb.obs_next, one_hot_action)
                     inv_loss = F.cross_entropy(action_logits, one_hot_action)
