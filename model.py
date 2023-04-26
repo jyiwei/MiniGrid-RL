@@ -14,6 +14,14 @@ def init_params(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
+# def init_paramsICM(m):
+#     classname = m.__class__.__name__
+#     if classname.find("Linear") != -1:
+#         m.weight.data.normal_(0, 1)
+#         m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
+#         if m.bias is not None:
+#             m.bias.data.fill_(0)
+
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
@@ -110,6 +118,7 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
 class ICM(nn.Module):
     def __init__(self, obs_space, action_space):
         super(ICM, self).__init__()
+        self.n_actions = action_space.n
         self.conv = nn.Sequential(
             nn.Conv2d(3, 16, (2, 2)),
             nn.ReLU(),
@@ -119,7 +128,7 @@ class ICM(nn.Module):
             nn.Conv2d(32, 64, (2, 2)),
             nn.ReLU()
         )
-        self.action_net = nn.Linear(action_space.n, 64)
+        # self.action_net = nn.Linear(action_space.n, 64)
         n = obs_space["image"][0]
         m = obs_space["image"][1]
         
@@ -127,22 +136,16 @@ class ICM(nn.Module):
 
         self.inverse_net = nn.Sequential(
             nn.Linear(image_embedding_size * 2, 64),
-            nn.LeakyReLU(),
-            nn.Linear(64, action_space.n)
+            nn.ReLU(),
+            nn.Linear(64, self.n_actions)
         )
         self.forward_net = nn.Sequential(
-            nn.Linear(image_embedding_size * 2, 64),
-            nn.LeakyReLU(),
+            nn.Linear(image_embedding_size + self.n_actions, 64),
+            nn.ReLU(),
             nn.Linear(64, image_embedding_size)
         )
-        self.apply(init_params)
 
-    # def _initialize_weights(self):
-    #     for module in self.modules():
-    #         if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
-    #             nn.init.xavier_uniform_(module.weight)
-    #             # nn.init.kaiming_uniform_(module.weight)
-    #             nn.init.constant_(module.bias, 0)
+        self.apply(init_params)
 
     def forward(self, obs, next_obs, action):
 
@@ -154,11 +157,9 @@ class ICM(nn.Module):
         phi_t_next = self.conv(phi_t_next)
         phi_t_next = phi_t_next.reshape(phi_t_next.shape[0], -1)
 
-        action_features = self.action_net(action)
-
         action_logits = self.inverse_net(torch.cat((phi_t, phi_t_next), 1))
 
-        phi_t_next_hat = self.forward_net(torch.cat((phi_t, action_features), 1))
+        phi_t_next_hat = self.forward_net(torch.cat((phi_t, action), 1))
 
         return action_logits, phi_t_next_hat, phi_t_next
 

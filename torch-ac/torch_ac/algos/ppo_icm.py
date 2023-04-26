@@ -37,6 +37,9 @@ class PPO_ICM_Algo(BaseICMAlgo):
             log_policy_losses = []
             log_value_losses = []
             log_grad_norms = []
+            log_forward_loss = []
+            log_backward_loss = []
+            log_curiosity_loss = []
 
             for inds in self._get_batches_starting_indexes():
                 # Initialize batch values
@@ -47,6 +50,9 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 batch_value_loss = 0
                 batch_curiosity_loss = 0
                 batch_loss = 0
+
+                batch_fwd_loss = 0
+                batch_inv_loss = 0
 
                 # Initialize memory
 
@@ -68,7 +74,9 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     fwd_loss = F.mse_loss(pred_phi, phi) / 2
 
                     curiosity_loss = (self.icm_beta * fwd_loss + (1 - self.icm_beta)  * inv_loss)
+
                     curiosity_loss = curiosity_loss.mean()
+
 
                     # ac loss
 
@@ -104,6 +112,8 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     batch_value_loss += value_loss.item()
                     batch_curiosity_loss += curiosity_loss.item()
                     batch_loss += total_loss
+                    batch_fwd_loss += fwd_loss.item()
+                    batch_inv_loss += inv_loss.item()
 
                     # Update memories for next epoch
 
@@ -119,13 +129,13 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 batch_loss /= self.recurrence
 
                 # Update actor-critic
+                self.optimizer.zero_grad()
                 batch_loss.backward()
                 
                 # grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
                 grad_norm = torch.nn.utils.clip_grad_norm_(list(self.acmodel.parameters()) + list(self.icm.parameters()), self.max_grad_norm)
 
                 self.optimizer.step()
-                self.optimizer.zero_grad()
 
                 # Update log values
 
@@ -134,6 +144,10 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 log_policy_losses.append(batch_policy_loss)
                 log_value_losses.append(batch_value_loss)
                 log_grad_norms.append(grad_norm)
+
+                log_curiosity_loss.append(batch_curiosity_loss)
+                log_forward_loss.append(batch_fwd_loss)
+                log_backward_loss.append(batch_inv_loss)
 
         # Log some values
 
@@ -144,6 +158,10 @@ class PPO_ICM_Algo(BaseICMAlgo):
             "value_loss": numpy.mean(log_value_losses),
             "grad_norm": numpy.mean(log_grad_norms)
         }
+
+        print("forward loss", numpy.mean(log_forward_loss))
+        print("backward loss",numpy.mean(log_backward_loss))
+        print("curiosity loss", numpy.mean(log_curiosity_loss))
 
         return logs
 
