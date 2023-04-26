@@ -148,14 +148,14 @@ class BaseICMAlgo(ABC):
             obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
-            # one_hot_action = F.one_hot(action, num_classes=7).float()
+            one_hot_action = F.one_hot(action, num_classes=7).float()
             # Calculate inverse and forward loss
             with torch.no_grad():
                 _, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), one_hot_action)
             # inv_loss = F.cross_entropy(action_logits, one_hot_action)
             curiosity_reward = F.mse_loss(pred_phi, phi) / 2
 
-            self.inv_losses[i] = inv_loss
+            # self.inv_losses[i] = inv_loss
             # self.fwd_losses[i] = fwd_loss
             self.obs_next = obs
             self.obss_next[i] = self.obs_next
