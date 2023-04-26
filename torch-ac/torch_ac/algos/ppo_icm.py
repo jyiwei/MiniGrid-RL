@@ -23,8 +23,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
         assert self.batch_size % self.recurrence == 0
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
-        self.icm_optimizer = torch.optim.Adam(self.icm.parameters(), lr, eps=adam_eps)
+        self.optimizer = torch.optim.Adam(list(self.acmodel.parameters()) + list(self.icm.parameters()), lr=self.lr)
         self.batch_num = 0
 
     def update_parameters(self, exps):
@@ -61,6 +60,18 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
                     # Compute loss
 
+                    # curiosity loss
+                    one_hot_action = F.one_hot(sb.action.to(torch.int64), num_classes=7).float()
+                    # Calculate inverse and forward loss
+                    action_logits, pred_phi, phi = self.icm(sb.obs, sb.obs_next, one_hot_action)
+                    inv_loss = F.cross_entropy(action_logits, one_hot_action)
+                    fwd_loss = F.mse_loss(pred_phi, phi) / 2
+
+                    curiosity_loss = (self.icm_beta * fwd_loss + (1 - self.icm_beta)  * inv_loss)
+                    curiosity_loss = curiosity_loss.mean()
+
+                    # ac loss
+
                     if self.acmodel.recurrent:
                         dist, value, memory = self.acmodel(sb.obs, memory * sb.mask)
                     else:
@@ -80,11 +91,8 @@ class PPO_ICM_Algo(BaseICMAlgo):
 
                     loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
 
-                    # curiosity loss
+                    # print(loss)
 
-                    curiosity_loss = (self.icm_beta * sb.fwd_loss + (1 - self.icm_beta)  * sb.inv_loss)
-                    curiosity_loss = curiosity_loss.mean()
-                    
                     total_loss = self.icm_policy_weight * loss + curiosity_loss
                     # total_loss = curiosity_loss
                     
@@ -111,15 +119,13 @@ class PPO_ICM_Algo(BaseICMAlgo):
                 batch_loss /= self.recurrence
 
                 # Update actor-critic
-                torch.autograd.set_detect_anomaly(True)
-                self.optimizer.zero_grad()
-                self.icm_optimizer.zero_grad()
-                batch_loss.backward(retain_graph = True)
-                grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
-                torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
-                torch.nn.utils.clip_grad_norm_(self.icm.parameters(), self.max_grad_norm)
+                batch_loss.backward()
+                
+                # grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
+                grad_norm = torch.nn.utils.clip_grad_norm_(list(self.acmodel.parameters()) + list(self.icm.parameters()), self.max_grad_norm)
+
                 self.optimizer.step()
-                self.icm_optimizer.step()
+                self.optimizer.zero_grad()
 
                 # Update log values
 

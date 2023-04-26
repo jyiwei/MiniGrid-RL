@@ -44,7 +44,7 @@ def get_vocab(model_dir):
 
 
 def get_model_state(model_dir):
-    return get_status(model_dir)["model_state"]
+    return get_status(model_dir)["ac_model_state"]
 
 
 def get_txt_logger(model_dir):

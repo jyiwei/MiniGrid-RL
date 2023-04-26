@@ -85,7 +85,9 @@ class BaseICMAlgo(ABC):
         shape = (self.num_frames_per_proc, self.num_procs)
 
         self.obs = self.env.reset()
+        self.obs_next = None
         self.obss = [None] * (shape[0])
+        self.obss_next = [None] * (shape[0])
         if self.acmodel.recurrent:
             self.memory = torch.zeros(shape[1], self.acmodel.memory_size, device=self.device)
             self.memories = torch.zeros(*shape, self.acmodel.memory_size, device=self.device)
@@ -97,8 +99,8 @@ class BaseICMAlgo(ABC):
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
 
-        self.inv_losses = torch.zeros(*shape, device=self.device)
-        self.fwd_losses = torch.zeros(*shape, device=self.device)
+        # self.inv_losses = torch.zeros(*shape, device=self.device)
+        # self.fwd_losses = torch.zeros(*shape, device=self.device)
 
         # Initialize log values
 
@@ -146,14 +148,17 @@ class BaseICMAlgo(ABC):
             obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
-            one_hot_action = F.one_hot(action, num_classes=7).float()
+            # one_hot_action = F.one_hot(action, num_classes=7).float()
             # Calculate inverse and forward loss
-            action_logits, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), one_hot_action)
-            inv_loss = F.cross_entropy(action_logits, one_hot_action)
-            fwd_loss = F.mse_loss(pred_phi, phi) / 2
+            with torch.no_grad():
+                _, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), one_hot_action)
+            # inv_loss = F.cross_entropy(action_logits, one_hot_action)
+            curiosity_reward = F.mse_loss(pred_phi, phi) / 2
 
-            self.inv_losses[i] = inv_loss.detach()
-            self.fwd_losses[i] = fwd_loss.detach()
+            self.inv_losses[i] = inv_loss
+            # self.fwd_losses[i] = fwd_loss
+            self.obs_next = obs
+            self.obss_next[i] = self.obs_next
 
             # Update experiences values
 
@@ -169,16 +174,19 @@ class BaseICMAlgo(ABC):
             if self.reshape_reward is not None:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs, action, reward + fwd_loss.detach(), done)
+                    for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
                 ], device=self.device)
             else:
-                self.rewards[i] = torch.tensor(reward, device=self.device) +  fwd_loss.detach()
+                # print(torch.tensor(reward, device=self.device))
+                extrinsic_reward = torch.tensor(reward, device=self.device)
+                self.rewards[i] = torch.tensor(reward, device=self.device) + curiosity_reward
+
             self.log_probs[i] = dist.log_prob(action)
 
             # Update log values
 
             self.log_episode_return += torch.tensor(reward, device=self.device, dtype=torch.float)
-            self.log_episode_reshaped_return += self.rewards[i]
+            self.log_episode_reshaped_return += extrinsic_reward
             self.log_episode_num_frames += torch.ones(self.num_procs, device=self.device)
 
             for i, done_ in enumerate(done):
@@ -221,6 +229,9 @@ class BaseICMAlgo(ABC):
         exps.obs = [self.obss[i][j]
                     for j in range(self.num_procs)
                     for i in range(self.num_frames_per_proc)]
+        exps.obs_next = [self.obss_next[i][j]
+                            for j in range(self.num_procs)
+                            for i in range(self.num_frames_per_proc)]
         if self.acmodel.recurrent:
             # T x P x D -> P x T x D -> (P * T) x D
             exps.memory = self.memories.transpose(0, 1).reshape(-1, *self.memories.shape[2:])
@@ -234,12 +245,13 @@ class BaseICMAlgo(ABC):
         exps.returnn = exps.value + exps.advantage
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
         # curiosity related
-        exps.inv_loss = self.inv_losses.transpose(0, 1).reshape(-1)
-        exps.fwd_loss = self.fwd_losses.transpose(0, 1).reshape(-1)
+        # exps.inv_loss = self.inv_losses.transpose(0, 1).reshape(-1)
+        # exps.fwd_loss = self.fwd_losses.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
 
         exps.obs = self.preprocess_obss(exps.obs, device=self.device)
+        exps.obs_next = self.preprocess_obss(exps.obs_next, device=self.device)
 
         # Log some values
 
