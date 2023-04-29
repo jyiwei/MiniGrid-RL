@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
+from torch.nn.init import orthogonal_, calculate_gain
 import torch_ac
 
 
@@ -14,13 +15,13 @@ def init_params(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
-# def init_paramsICM(m):
-#     classname = m.__class__.__name__
-#     if classname.find("Linear") != -1:
-#         m.weight.data.normal_(0, 1)
-#         m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
-#         if m.bias is not None:
-#             m.bias.data.fill_(0)
+def init_paramsICM(m):
+    classname = m.__class__.__name__
+    if classname.find("Linear") != -1:
+        gain = calculate_gain('relu')
+        orthogonal_(m.weight.data, gain=gain)
+        if m.bias is not None:
+            m.bias.data.fill_(0)
 
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
@@ -138,6 +139,7 @@ class ICM(nn.Module):
             nn.Linear(image_embedding_size * 2, 64),
             nn.ReLU(),
             nn.Linear(64, self.n_actions)
+
         )
         self.forward_net = nn.Sequential(
             nn.Linear(image_embedding_size + self.n_actions, 64),
@@ -145,7 +147,7 @@ class ICM(nn.Module):
             nn.Linear(64, image_embedding_size)
         )
 
-        self.apply(init_params)
+        self.apply(init_paramsICM)
 
     def forward(self, obs, next_obs, action):
 

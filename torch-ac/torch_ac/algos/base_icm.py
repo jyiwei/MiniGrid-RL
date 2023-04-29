@@ -148,7 +148,7 @@ class BaseICMAlgo(ABC):
             obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
-            one_hot_action = F.one_hot(action, num_classes=7).float()
+            one_hot_action = F.one_hot(action, num_classes=7).float().detach()
             # Calculate inverse and forward loss
             with torch.no_grad():
                 _, pred_phi, phi = self.icm(preprocessed_obs, self.preprocess_obss(obs, device=self.device), one_hot_action)
@@ -179,7 +179,7 @@ class BaseICMAlgo(ABC):
             else:
                 # print(torch.tensor(reward, device=self.device))
                 extrinsic_reward = torch.tensor(reward, device=self.device)
-                self.rewards[i] = torch.tensor(reward, device=self.device) + curiosity_reward
+                self.rewards[i] = extrinsic_reward + curiosity_reward * 100
 
             self.log_probs[i] = dist.log_prob(action)
 
