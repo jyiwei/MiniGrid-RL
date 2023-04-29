@@ -24,9 +24,11 @@ def init_paramsICM(m):
             m.bias.data.fill_(0)
 
 
-class ACModel(nn.Module, torch_ac.RecurrentACModel):
+class ACModel(nn.Module):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
         super().__init__()
+
+        self.recurrent = True
 
         # Decide which components are enabled
         self.use_text = use_text
@@ -46,16 +48,16 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         m = obs_space["image"][1]
         self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
 
-        # Define memory
-        if self.use_memory:
-            self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+        # # Define memory
+        # if self.use_memory:
+        #     self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
 
-        # Define text embedding
-        if self.use_text:
-            self.word_embedding_size = 32
-            self.word_embedding = nn.Embedding(obs_space["text"], self.word_embedding_size)
-            self.text_embedding_size = 128
-            self.text_rnn = nn.GRU(self.word_embedding_size, self.text_embedding_size, batch_first=True)
+        # # Define text embedding
+        # if self.use_text:
+        #     self.word_embedding_size = 32
+        #     self.word_embedding = nn.Embedding(obs_space["text"], self.word_embedding_size)
+        #     self.text_embedding_size = 128
+        #     self.text_rnn = nn.GRU(self.word_embedding_size, self.text_embedding_size, batch_first=True)
 
         # Resize image embedding
         self.embedding_size = self.semi_memory_size
@@ -129,7 +131,7 @@ class ICM(nn.Module):
             nn.Conv2d(32, 64, (2, 2)),
             nn.ReLU()
         )
-        # self.action_net = nn.Linear(action_space.n, 64)
+
         n = obs_space["image"][0]
         m = obs_space["image"][1]
         
@@ -149,6 +151,10 @@ class ICM(nn.Module):
 
         self.apply(init_paramsICM)
 
+    def embed(self, obs):
+        x = obs.image.transpose(1, 3).transpose(2, 3)
+        return self.conv(x)
+
     def forward(self, obs, next_obs, action):
 
         phi_t = obs.image.transpose(1, 3).transpose(2, 3)
@@ -163,11 +169,7 @@ class ICM(nn.Module):
 
         phi_t_next_hat = self.forward_net(torch.cat((phi_t, action), 1))
 
-        return action_logits, phi_t_next_hat, phi_t_next
+        # print("phi_t", phi_t)
+        # print("phi_t_next", phi_t)
 
-        # state_ft = self.conv(state)
-        # next_state_ft = self.conv(next_state)
-        # state_ft = state_ft.view(-1, self.feature_size)
-        # next_state_ft = next_state_ft.view(-1, self.feature_size)
-        # return self.inverse_net(torch.cat((state_ft, next_state_ft), 1)), self.forward_net(
-        #     torch.cat((state_ft, action), 1)), next_state_ft
+        return action_logits, phi_t_next_hat, phi_t_next

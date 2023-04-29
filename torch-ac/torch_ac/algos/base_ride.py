@@ -6,7 +6,7 @@ from torch_ac.format import default_preprocess_obss
 from torch_ac.utils import DictList, ParallelEnv
 
 
-class BaseICMAlgo(ABC):
+class BaseRIDEAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs, acmodel, icm, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -113,6 +113,8 @@ class BaseICMAlgo(ABC):
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
 
+        self.state_counts_list = [{} for _ in range(self.num_procs)]
+
         # self.inv_losses = torch.zeros(*shape, device=self.device)
         # self.fwd_losses = torch.zeros(*shape, device=self.device)
 
@@ -149,7 +151,7 @@ class BaseICMAlgo(ABC):
             Useful stats about the training process, including the average
             reward, policy loss, value loss, etc.
         """
-
+        
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
 
@@ -167,14 +169,26 @@ class BaseICMAlgo(ABC):
             self.obs_next = obs
             self.obss_next[i] = self.obs_next
 
-            one_hot_action = F.one_hot(action, num_classes=7).float().detach()
-            # Calculate intrinsic reward
             preprocessed_obs_next = self.preprocess_obss(self.obs_next, device=self.device)
+            for env_idx in range(self.num_procs):
+                if done[env_idx]:
+                    # Reset state count for this environment when episode ends
+                    self.state_counts_list[env_idx] = {}
+                else:
+                    state_key = tuple(preprocessed_obs_next.image[env_idx].view(-1).tolist())
+                    if state_key not in self.state_counts_list[env_idx]:
+                        self.state_counts_list[env_idx][state_key] = 0
+                    self.state_counts_list[env_idx][state_key] += 1
+
+            # one_hot_action = F.one_hot(action, num_classes=7).float().detach()
+            # Calculate intrinsic reward
             with torch.no_grad():
-                _, pred_phi, phi = self.icm(preprocessed_obs, preprocessed_obs_next, one_hot_action)
+                phi_curr = self.icm.embed(preprocessed_obs)
+                phi_next = self.icm.embed(preprocessed_obs_next)
 
-            intrinsic_reward = self.intrinsic_reward_weight * (F.mse_loss(pred_phi, phi) / 2)
-
+            state_count = self.state_counts_list[env_idx].get(tuple(preprocessed_obs_next.image[env_idx].view(-1).tolist()), 1)
+            intrinsic_reward = F.mse_loss(phi_next, phi_curr) / torch.sqrt(torch.tensor(max(state_count, 1), dtype=torch.float))
+            intrinsic_reward *= self.intrinsic_reward_weight
             # Update experiences values
 
             self.obss[i] = self.obs
@@ -192,7 +206,7 @@ class BaseICMAlgo(ABC):
                     for obs_, action_, reward_, done_ in zip(obs, action, reward + intrinsic_reward, done)
                 ], device=self.device)
             else:
-                extrinsic_reward = torch.tensor(reward, device=self.device, dtype=torch.float)
+                extrinsic_reward = torch.tensor(reward, device=self.device)
                 self.rewards[i] = extrinsic_reward + intrinsic_reward
 
             self.log_probs[i] = dist.log_prob(action)

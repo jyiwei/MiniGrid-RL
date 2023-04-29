@@ -50,12 +50,14 @@ parser.add_argument("--entropy-coef", type=float, default=0.01,
                     help="entropy term coefficient (default: 0.01)")
 parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
+parser.add_argument("--intrinsic-reward-weight", type=float, default=0.01,
+                    help="the intrinsic reward weight")
+parser.add_argument("--fwd_loss_weight", type=float, default=0.2,
+                    help="the beta of icm")
+parser.add_argument("--icm_policy_weight", type=float, default=0.1,
+                    help="the weight on the policy loss")
 parser.add_argument("--max-grad-norm", type=float, default=0.5,
                     help="maximum norm of gradient (default: 0.5)")
-parser.add_argument("--icm-beta", type=float, default=0.5,
-                    help="the beta of icm")
-parser.add_argument("--icm_policy_weight", type=float, default=1,
-                    help="the weight on the policy loss")
 parser.add_argument("--optim-eps", type=float, default=1e-8,
                     help="Adam and RMSprop optimizer epsilon (default: 1e-8)")
 parser.add_argument("--optim-alpha", type=float, default=0.99,
@@ -134,14 +136,11 @@ if __name__ == "__main__":
     if "icm_model_state" in status:
         icm.load_state_dict(status["icm_model_state"])
 
-
     acmodel.to(device)
     icm.to(device)
     txt_logger.info("Model loaded\n")
     txt_logger.info("{}\n".format(acmodel))
     txt_logger.info("{}\n".format(icm))
-
-    # Load algo
 
     if args.algo == "a2c":
         algo = torch_ac.A2CAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
@@ -153,16 +152,20 @@ if __name__ == "__main__":
                                 args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
     elif args.algo == "ppo_icm":
         algo = torch_ac.PPO_ICM_Algo(envs, acmodel, icm, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
-                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence, args.optim_eps, 
-                                args.clip_eps, args.icm_beta, args.icm_policy_weight,  args.epochs, args.batch_size, preprocess_obss)
+                                args.entropy_coef, args.value_loss_coef, args.intrinsic_reward_weight,
+                                args.fwd_loss_weight, args.icm_policy_weight, args.max_grad_norm, args.recurrence, 
+                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+    elif args.algo == "ppo_ride":
+        algo = torch_ac.PPO_RIDE_Algo(envs, acmodel, icm, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
+                                args.entropy_coef, args.value_loss_coef, args.intrinsic_reward_weight,
+                                args.fwd_loss_weight, args.icm_policy_weight, args.max_grad_norm, args.recurrence, 
+                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
     if "optimizer_state" in status:
         algo.optimizer.load_state_dict(status["optimizer_state"])
     txt_logger.info("Optimizer loaded\n")
-
-    # Train model
 
     num_frames = status["num_frames"]
     update = status["update"]
@@ -186,21 +189,29 @@ if __name__ == "__main__":
             duration = int(time.time() - start_time)
             return_per_episode = utils.synthesize(logs["return_per_episode"])
             rreturn_per_episode = utils.synthesize(logs["reshaped_return_per_episode"])
+            intrinsic_return_per_episode = utils.synthesize(logs["intrinsic_return_per_episode"])
             num_frames_per_episode = utils.synthesize(logs["num_frames_per_episode"])
 
             header = ["update", "frames", "FPS", "duration"]
             data = [update, num_frames, fps, duration]
             header += ["rreturn_" + key for key in rreturn_per_episode.keys()]
             data += rreturn_per_episode.values()
-            header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
-            data += num_frames_per_episode.values()
-            header += ["entropy", "value", "policy_loss", "value_loss", "grad_norm"]
-            data += [logs["entropy"], logs["value"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
+            # header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
+            # data += num_frames_per_episode.values()
+            header += ["ireturn" + key for key in intrinsic_return_per_episode.keys()]
+            data += intrinsic_return_per_episode.values()
+            # header += ["entropy", "value", "policy_loss", "value_loss", "grad_norm"]
+            # data += [logs["entropy"], logs["value"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
+            header += ["inv_loss", "fwd_loss", "policy_loss", "value_loss", "grad_norm"]
+            data += [logs["inverse_loss"], logs["forward_loss"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
 
+            # txt_logger.info(
+            #     "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
+            #     .format(*data))
             txt_logger.info(
-                "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
+                "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | iR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | iL {:.3f} | fL {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
                 .format(*data))
-
+            
             header += ["return_" + key for key in return_per_episode.keys()]
             data += return_per_episode.values()
 
@@ -216,7 +227,7 @@ if __name__ == "__main__":
 
         if args.save_interval > 0 and update % args.save_interval == 0:
             status = {"num_frames": num_frames, "update": update,
-                      "ac_model_state": acmodel.state_dict(), "icm_model_state": icm.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
+                    "ac_model_state": acmodel.state_dict(), "icm_model_state": icm.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
             if hasattr(preprocess_obss, "vocab"):
                 status["vocab"] = preprocess_obss.vocab.vocab
             utils.save_status(status, model_dir)

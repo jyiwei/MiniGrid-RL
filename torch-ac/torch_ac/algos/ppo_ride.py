@@ -2,9 +2,9 @@ import numpy
 import torch
 import torch.nn.functional as F
 
-from torch_ac.algos.base_icm import BaseICMAlgo
+from torch_ac.algos.base_ride import BaseRIDEAlgo
 
-class PPO_ICM_Algo(BaseICMAlgo):
+class PPO_RIDE_Algo(BaseRIDEAlgo):
     """The Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
 
@@ -75,7 +75,7 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     inv_loss = F.cross_entropy(action_logits, one_hot_action)
                     fwd_loss = F.mse_loss(pred_phi, phi)
 
-                    curiosity_loss = (self.fwd_loss_weight * fwd_loss + (1 - self.fwd_loss_weight) * inv_loss)
+                    curiosity_loss = (self.fwd_loss_weight * fwd_loss + (1 - self.fwd_loss_weight)  * inv_loss)
 
                     curiosity_loss = curiosity_loss.mean()
 
@@ -102,7 +102,6 @@ class PPO_ICM_Algo(BaseICMAlgo):
                     loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
 
                     total_loss = self.icm_policy_weight * loss + curiosity_loss
-                    # total_loss = curiosity_loss
                     
                     # Update batch values
 
